@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+*.egg-info/
+
+# Segredos - NUNCA commitar
+bancada/config.json
+bancada/serviceAccountKey.json
+app_flutter/lib/firebase_options.dart
+.env
+
+# Dados pesados (regerar com: python ml/gerar_dataset.py)
+ml/data/*.csv
+ml/data/*.csv.gz
+!ml/data/.gitkeep
+
+# Modelo treinado (regerar com: python ml/treinar_modelo.py)
+ml/modelo/*.joblib
+
+# Flutter
+app_flutter/.dart_tool/
+app_flutter/build/
+app_flutter/.flutter-plugins*
+app_flutter/pubspec.lock
+
+# Editor / SO
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+
+bancada/fila_offline.jsonl

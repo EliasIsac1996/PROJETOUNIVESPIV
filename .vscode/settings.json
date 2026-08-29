@@ -1,0 +1,9 @@
+{
+  "python.defaultInterpreterPath": ".venv/bin/python",
+  "python.analysis.extraPaths": ["./bancada", "./ml"],
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/.dart_tool": true
+  },
+  "editor.formatOnSave": false
+}

@@ -1,0 +1,42 @@
+rules_version = '2';
+
+// Regras do Cloud Firestore.
+// Publique com: firebase deploy --only firestore:rules
+//
+// Modelo: o app Flutter so LE. Quem escreve e o script da bancada, que usa
+// credencial de conta de servico (Admin SDK) e ignora estas regras por design.
+// Isso e proposital: nenhum segredo de escrita vai dentro do app.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function autenticado() {
+      return request.auth != null;
+    }
+
+    match /maquinas/{serial} {
+      allow read: if autenticado();
+      // gestor pode reclassificar (tirar de quarentena, descartar),
+      // mas nao pode forjar telemetria nem risco
+      allow update: if autenticado()
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['status', 'escola', 'sala']);
+      allow create, delete: if false;
+
+      match /leituras/{leitura} {
+        allow read: if autenticado();
+        allow write: if false;
+      }
+    }
+
+    match /eventos/{evento} {
+      allow read: if autenticado();
+      allow write: if false;
+    }
+
+    match /bancadas/{id} {
+      allow read: if autenticado();
+      allow write: if false;
+    }
+  }
+}
