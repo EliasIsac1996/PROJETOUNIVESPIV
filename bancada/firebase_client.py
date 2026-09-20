@@ -8,7 +8,7 @@ COMO OBTER A CREDENCIAL (faca uma vez):
   2. Configuracoes do projeto -> Contas de servico
   3. "Gerar nova chave privada" -> baixa um .json
   4. Salve como bancada/serviceAccountKey.json
-  5. NUNCA commite esse arquivo. Ja esta no .gitignore.
+  5. NUNCA commite nem compartilhe esse arquivo. Ja esta no .gitignore.
 
 ESTRUTURA NO FIRESTORE:
   maquinas/{serial_bios}
@@ -19,7 +19,7 @@ ESTRUTURA NO FIRESTORE:
   bancadas/{id_bancada}
       ultimo ping, nome, URE
 
-Modo offline: se a credencial nao existir, o cliente grava em
+Modo offline: se nao der para conectar, o cliente grava em
 bancada/fila_offline.jsonl e sincroniza na proxima execucao com internet.
 Bancada em escola publica cai da rede o tempo todo - isso nao e luxo.
 """
@@ -34,27 +34,56 @@ FILA = os.path.join(DIR, "fila_offline.jsonl")
 
 _db = None
 
+# Guarda o motivo exato da ultima falha, para o diagnostico nao mentir.
+# (Antes, biblioteca faltando aparecia como "sem credencial" e mandava o
+#  usuario procurar problema no arquivo errado.)
+_ultimo_erro = ""
+
 
 def _agora():
     return datetime.now(timezone.utc).isoformat()
 
 
+def motivo_desconexao():
+    """Explica, em portugues claro, por que nao deu para conectar."""
+    if not _ultimo_erro:
+        return ""
+    if "firebase_admin" in _ultimo_erro:
+        return ("Biblioteca firebase-admin nao instalada.\n"
+                "  Resolva com: pip install firebase-admin\n"
+                "  (com o ambiente virtual .venv ATIVO)")
+    if _ultimo_erro == "credencial ausente":
+        return (f"Credencial nao encontrada em:\n  {CRED}\n"
+                "  Gere em: Firebase > Configuracoes do projeto > Contas de servico\n"
+                "  e salve com esse nome exato.")
+    return _ultimo_erro
+
+
 def conectar():
-    """Devolve o client do Firestore, ou None se nao houver credencial."""
-    global _db
+    """Devolve o client do Firestore, ou None se nao der para conectar."""
+    global _db, _ultimo_erro
     if _db is not None:
         return _db
-    if not os.path.exists(CRED):
-        return None
+
     try:
         import firebase_admin
         from firebase_admin import credentials, firestore
+    except ImportError as e:
+        _ultimo_erro = f"firebase_admin ausente: {e}"
+        return None
+
+    if not os.path.exists(CRED):
+        _ultimo_erro = "credencial ausente"
+        return None
+
+    try:
         if not firebase_admin._apps:
             firebase_admin.initialize_app(credentials.Certificate(CRED))
         _db = firestore.client()
+        _ultimo_erro = ""
         return _db
     except Exception as e:
-        print(f"[firebase] falha ao conectar: {e}")
+        _ultimo_erro = str(e)
         return None
 
 
@@ -80,7 +109,7 @@ def salvar_maquina(registro):
     db = conectar()
     if db is None:
         _enfileirar("maquina", registro)
-        return {"enviado": False, "motivo": "offline ou sem credencial"}
+        return {"enviado": False, "motivo": _ultimo_erro or "offline"}
 
     doc = db.collection("maquinas").document(serial)
     doc.set(registro, merge=True)
@@ -174,6 +203,19 @@ def sincronizar_fila():
 
 if __name__ == "__main__":
     db = conectar()
-    print("Firestore conectado." if db else
-          f"Sem credencial. Esperado em: {CRED}\nModo offline ativo.")
-    print(sincronizar_fila())
+    if db:
+        print("[ok] Firestore conectado.")
+        res = sincronizar_fila()
+        if res["enviados"]:
+            print(f"[ok] {res['enviados']} registro(s) da fila offline "
+                  f"sincronizado(s).")
+        if res["pendentes"]:
+            print(f"[!] {res['pendentes']} ainda pendente(s).")
+        if not res["enviados"] and not res["pendentes"]:
+            print("[ok] Nada pendente na fila offline.")
+    else:
+        print("[!] Nao foi possivel conectar ao Firestore.\n")
+        print(motivo_desconexao())
+        print("\nModo offline ativo: os envios ficam guardados em")
+        print(f"  {FILA}")
+        print("e sobem sozinhos assim que a conexao funcionar.")
