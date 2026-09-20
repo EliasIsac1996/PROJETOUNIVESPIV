@@ -153,8 +153,16 @@ def buscar_maquina(serial_bios):
 
 def ultima_leitura(serial_bios):
     """
-    Ultima leitura anterior da maquina. Alimenta as features d7_* do modelo,
-    que medem a VELOCIDADE de degradacao. Sem isso a predicao e bem pior.
+    Leitura anterior da maquina, usada para calcular as features d7_*, que
+    medem a VELOCIDADE de degradacao dos contadores SMART. Sao as features de
+    maior peso no modelo (d7_smart_187_raw e a 2a mais importante), entao sem
+    elas a predicao fica bem pior.
+
+    ATENCAO A ORDEM: main.py chama esta funcao ANTES de gravar a leitura atual.
+    Logo o documento mais recente do historico (docs[0]) JA E a leitura
+    anterior. Pegar docs[1] aqui pularia uma leitura e, com apenas um registro
+    no historico, devolveria None - fazendo o sistema achar que toda maquina
+    estava passando pela bancada pela primeira vez.
     """
     db = conectar()
     if db is None:
@@ -162,9 +170,9 @@ def ultima_leitura(serial_bios):
     q = (db.collection("maquinas").document(serial_bios)
            .collection("leituras")
            .order_by("atualizado_em", direction="DESCENDING")
-           .limit(2).stream())
+           .limit(1).stream())
     docs = [d.to_dict() for d in q]
-    return docs[1] if len(docs) > 1 else None
+    return docs[0] if docs else None
 
 
 def sincronizar_fila():
