@@ -35,3 +35,7 @@ app_flutter/pubspec.lock
 Thumbs.db
 
 bancada/fila_offline.jsonl
+
+ml/data/backblaze/
+ml/modelo_backblaze/*.joblib
+.firebaserc
