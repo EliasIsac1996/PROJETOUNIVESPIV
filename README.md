@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # App Flutter — Painel da URE
 
 ## Primeira execução
@@ -24,3 +25,6 @@ APK depois: `flutter build apk --release`.
 | `screens/lista_screen.dart` | Inventário com busca e filtro |
 | `screens/ficha_screen.dart` | Ficha da máquina + histórico de risco |
 | `screens/quarentena_screen.dart` | Máquinas desconhecidas aguardando decisão |
+=======
+# PROJETOUNIVESPIV
+>>>>>>> 63fef65a0cf5d56645e5316a2aa40382fdec8d47
