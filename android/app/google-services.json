@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "971037007816",
+    "project_id": "projetopiivinventario",
+    "storage_bucket": "projetopiivinventario.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:971037007816:android:f150b281fd190594066afd",
+        "android_client_info": {
+          "package_name": "com.example.bancada_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC87R0LI5gPTqZ1QJ1BVrkBn0m0oxStIvo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
