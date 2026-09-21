@@ -8,6 +8,7 @@ class Maquina {
   final String serialBios;
   final String fabricante;
   final String modeloPc;
+  final String cieEscola; // Codigo de Identificacao Escolar
   final String escola;
   final String sala;
   final String cpu;
@@ -26,6 +27,7 @@ class Maquina {
     required this.serialBios,
     this.fabricante = '',
     this.modeloPc = '',
+    this.cieEscola = '',
     this.escola = '',
     this.sala = '',
     this.cpu = '',
@@ -47,6 +49,7 @@ class Maquina {
       serialBios: id,
       fabricante: (m['fabricante'] ?? '') as String,
       modeloPc: (m['modelo_pc'] ?? '') as String,
+      cieEscola: (m['cie_escola'] ?? '') as String,
       escola: (m['escola'] ?? 'Nao atribuida') as String,
       sala: (m['sala'] ?? '-') as String,
       cpu: (m['cpu'] ?? '') as String,

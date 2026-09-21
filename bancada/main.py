@@ -44,6 +44,12 @@ C_OFF = "\033[0m"
 COR_FAIXA = {"OK": C_VERDE, "ATENCAO": C_AMAR, "CRITICO": C_VERM,
              "QUARENTENA": C_VERM}
 
+# Dicionario simples de escolas para validacao rapida
+ESCOLAS_EXEMPLO = {
+    "85397": "SERRA AZUL",
+    "24296": "FRANCISCO FERREIRA DE FREITAS"
+}
+
 
 def carregar_config():
     padrao = {"id_bancada": "URE-01-BANCADA-01", "ure": "URE Exemplo",
@@ -56,12 +62,34 @@ def carregar_config():
 
 def cabecalho(cfg):
     print("=" * 66)
-    print("  BANCADA DE VALIDACAO FISICA E INVENTARIO PREDITIVO")
+    print("  INVENTARIO - BANCADA DE VALIDACAO FISICA E PREDITIVA")
     print(f"  {cfg['id_bancada']}  |  {cfg['ure']}")
     print("=" * 66)
 
 
-def executar_ciclo(cfg, banca, simular=False):
+def solicitar_escola():
+    """Pergunta o CIE ao tecnico e valida."""
+    while True:
+        print(f"\n{C_AMAR}ESCOLAS CONHECIDAS:{C_OFF}")
+        for cie, nome in ESCOLAS_EXEMPLO.items():
+            print(f"  {cie} - {nome}")
+
+        cie = input(f"\nDigite o CIE da escola (ou ENTER para Pular): ").strip()
+        if not cie:
+            return None, "Nao Informada"
+
+        if cie in ESCOLAS_EXEMPLO:
+            nome = ESCOLAS_EXEMPLO[cie]
+            print(f"{C_VERDE}Escola selecionada: {nome}{C_OFF}")
+            return cie, nome
+        else:
+            print(f"{C_VERM}CIE {cie} nao encontrado na lista de exemplo.{C_OFF}")
+            confirmar = input("Deseja usar este CIE mesmo assim? (s/n): ").lower()
+            if confirmar == 's':
+                return cie, "Escola Nova / Nao Mapeada"
+
+
+def executar_ciclo(cfg, banca, simular=False, cie_sessao=None, nome_escola=None):
     inicio = datetime.now(timezone.utc)
 
     # ---- 1. coleta ----
@@ -69,8 +97,6 @@ def executar_ciclo(cfg, banca, simular=False):
     inv = hw.coletar_tudo()
     disco = inv["disco"]
 
-    # Cadeia de identificacao: BIOS -> placa-mae -> disco.
-    # PC montado (sem fabricante OEM) quase sempre cai para placa-mae ou disco.
     serial = inv["serial_bios"]
     origem = inv.get("origem_serial") or ""
     if not serial:
@@ -79,32 +105,25 @@ def executar_ciclo(cfg, banca, simular=False):
 
     if not serial:
         print(f"{C_VERM}      Nenhum identificador encontrado.{C_OFF}")
-        print("      Rode como administrador/sudo e confira o smartctl.")
         if banca:
             banca.sinalizar("QUARENTENA")
         return None
 
     print(f"      Serial      : {serial}  ({origem})")
     print(f"      Modelo      : {inv['fabricante']} {inv['modelo_pc']}")
-    print(f"      CPU         : {inv['cpu']} "
-          f"({inv['cpu_cores']}C/{inv['cpu_threads']}T)")
-    print(f"      RAM         : {inv['ram_gb']} GB em {inv['ram_pentes']} pente(s)")
-
-    if disco["disponivel"]:
-        print(f"      Disco       : {disco['model']} "
-              f"({disco['capacity_bytes'] / 1e9:.0f} GB, {disco['tipo_disco']})")
-    else:
-        print(f"{C_AMAR}      Disco       : SMART indisponivel - {disco['motivo']}{C_OFF}")
+    print(f"      Vinculo     : CIE {cie_sessao} - {nome_escola}")
 
     # ---- 2. cadastro / quarentena ----
     print("\n[2/5] Consultando cadastro...")
     conhecida = None if simular else fb.buscar_maquina(serial)
+
+    # Se ja conhecida, mantem o status ativo. Se nova, entra em quarentena
+    # a menos que o tecnico esteja vinculando a uma escola valida agora.
     if conhecida:
-        print(f"{C_VERDE}      Cadastrada: {conhecida.get('escola', '?')} / "
-              f"{conhecida.get('sala', '?')}{C_OFF}")
-        status_cadastro = "ativo"
+        print(f"{C_VERDE}      Ja cadastrada: {conhecida.get('escola', '?')}{C_OFF}")
+        status_cadastro = conhecida.get('status', 'ativo')
     else:
-        print(f"{C_AMAR}      Maquina nao cadastrada -> QUARENTENA{C_OFF}")
+        print(f"{C_AMAR}      Nova maquina detectada.{C_OFF}")
         status_cadastro = "quarentena"
 
     # ---- 3. predicao ----
@@ -116,9 +135,6 @@ def executar_ciclo(cfg, banca, simular=False):
         cor = COR_FAIXA[faixa]
         print(f"      Risco em {risco['horizonte_dias']} dias : "
               f"{cor}{risco['risco_pct']}%  [{faixa}]{C_OFF}")
-        if not risco["tinha_historico"]:
-            print(f"{C_CINZA}      (1a leitura desta maquina - sem historico, "
-                  f"predicao usa so valores absolutos){C_OFF}")
     else:
         risco = None
         faixa = "OK"
@@ -128,14 +144,10 @@ def executar_ciclo(cfg, banca, simular=False):
     print("\n[4/5] Sinalizando na bancada...")
     estado_led = "QUARENTENA" if status_cadastro == "quarentena" else faixa
     if banca:
-        r = banca.sinalizar(estado_led,
-                            risco=risco["risco"] if risco else None,
-                            serial_maquina=serial)
-        print(f"      LED -> {COR_FAIXA[estado_led]}{estado_led}{C_OFF}  "
-              f"(resposta: {r})")
-    else:
-        print(f"{C_CINZA}      Sem Arduino (modo simulacao). LED seria: "
-              f"{estado_led}{C_OFF}")
+        banca.sinalizar(estado_led,
+                        risco=risco["risco"] if risco else None,
+                        serial_maquina=serial)
+        print(f"      LED -> {COR_FAIXA[estado_led]}{estado_led}{C_OFF}")
 
     # ---- 5. nuvem ----
     print("\n[5/5] Enviando para o Firestore...")
@@ -144,11 +156,11 @@ def executar_ciclo(cfg, banca, simular=False):
         "origem_serial": origem,
         "fabricante": inv["fabricante"],
         "modelo_pc": inv["modelo_pc"],
+        "cie_escola": cie_sessao,
+        "escola": nome_escola,
         "sistema_operacional": inv["sistema_operacional"],
         "cpu": inv["cpu"], "cpu_cores": inv["cpu_cores"],
-        "cpu_threads": inv["cpu_threads"], "cpu_freq_ghz": inv["cpu_freq_ghz"],
-        "ram_gb": inv["ram_gb"], "ram_pentes": inv["ram_pentes"],
-        "pentes": inv["pentes"],
+        "ram_gb": inv["ram_gb"],
         "disco": disco,
         "risco_falha": risco["risco"] if risco else None,
         "risco_faixa": faixa,
@@ -159,25 +171,15 @@ def executar_ciclo(cfg, banca, simular=False):
     }
 
     if simular:
-        print(f"{C_CINZA}      Modo simulacao - nada enviado. Registro:{C_OFF}")
-        print(json.dumps(registro, indent=2, ensure_ascii=False,
-                         default=str)[:900] + " ...")
+        print(f"{C_CINZA}      Modo simulacao - nada enviado.{C_OFF}")
     else:
         res = fb.salvar_maquina(registro)
         print(f"      {res}")
-        if status_cadastro == "quarentena":
-            fb.registrar_evento("quarentena", serial,
-                                "Maquina desconhecida detectada na bancada")
-        if risco and risco["faixa"] == "CRITICO":
-            fb.registrar_evento("risco_critico", serial,
-                                f"Disco com {risco['risco_pct']}% de risco em "
-                                f"{risco['horizonte_dias']} dias",
-                                {"risco": risco["risco"]})
-        print(f"      Fila offline: {fb.sincronizar_fila()}")
+        fb.sincronizar_fila()
 
     dur = (datetime.now(timezone.utc) - inicio).total_seconds()
     print(f"\n{'-' * 66}")
-    print(f"Ciclo concluido em {dur:.1f}s  |  {serial}  |  "
+    print(f"Ciclo concluido em {dur:.1f}s  |  CIE: {cie_sessao}  |  "
           f"{COR_FAIXA[estado_led]}{estado_led}{C_OFF}")
     print("-" * 66)
     return registro
@@ -185,11 +187,9 @@ def executar_ciclo(cfg, banca, simular=False):
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--loop", action="store_true",
-                   help="fica em loop; ENTER dispara nova leitura")
-    p.add_argument("--simular", action="store_true",
-                   help="sem Arduino e sem Firebase")
-    p.add_argument("--porta", default=None, help="porta serial (ex: COM3, /dev/ttyUSB0)")
+    p.add_argument("--loop", action="store_true")
+    p.add_argument("--simular", action="store_true")
+    p.add_argument("--porta", default=None)
     a = p.parse_args()
 
     cfg = carregar_config()
@@ -200,22 +200,19 @@ def main():
         try:
             banca = arduino.Bancada(porta=a.porta or cfg.get("porta_serial"))
             banca.conectar()
-            print(f"Arduino  : {banca.id_bancada} (fw {banca.firmware}) "
-                  f"em {banca.porta}")
-            fb.ping_bancada(banca.id_bancada or cfg["id_bancada"], cfg["ure"])
-        except arduino.BancadaNaoEncontrada as e:
-            print(f"{C_AMAR}Arduino nao encontrado:{C_OFF}\n{e}")
-            print(f"{C_CINZA}Seguindo sem sinalizacao fisica.{C_OFF}")
+        except Exception as e:
+            print(f"{C_AMAR}Arduino offline: {e}{C_OFF}")
 
     try:
+        cie, nome = solicitar_escola()
+
         if a.loop:
-            print("\nModo bancada. ENTER para ler a maquina conectada, "
-                  "Ctrl+C para sair.")
+            print("\nModo bancada ativo. Ctrl+C para sair.")
             while True:
-                input("\n>>> ENTER para iniciar leitura... ")
-                executar_ciclo(cfg, banca, a.simular)
+                input(f"\n>>> ENTER para ler maquina vinculada a {nome}... ")
+                executar_ciclo(cfg, banca, a.simular, cie, nome)
         else:
-            executar_ciclo(cfg, banca, a.simular)
+            executar_ciclo(cfg, banca, a.simular, cie, nome)
     except KeyboardInterrupt:
         print("\nEncerrando.")
     finally:
