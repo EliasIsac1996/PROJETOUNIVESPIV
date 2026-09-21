@@ -1,8 +1,8 @@
-# ALERTAMAPA — Bancada de Inventário Preditivo e Validação Física
+# INVENTÁRIO — Bancada de Inventário Preditivo e Validação Física
 
 **UNIVESP — PJI410 · Projeto Integrador em Computação IV**
 
-O **ALERTAMAPA** é uma solução de hardware e software para gestão de ativos tecnológicos. O sistema identifica computadores, realiza uma análise preditiva da saúde do hardware via Inteligência Artificial e centraliza os dados na nuvem para gestão em tempo real.
+O **INVENTÁRIO** é uma solução de hardware e software para gestão de ativos tecnológicos. O sistema identifica computadores, realiza uma análise preditiva da saúde do hardware via Inteligência Artificial e centraliza os dados na nuvem para gestão em tempo real.
 
 ---
 
