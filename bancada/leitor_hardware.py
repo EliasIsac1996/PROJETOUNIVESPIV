@@ -19,6 +19,7 @@ Teste rapido:
 """
 
 import json
+import os
 import platform
 import re
 import shutil
@@ -39,6 +40,26 @@ SMART_INTERESSE = {
     199: "smart_199_raw",  # erro CRC UDMA (cabo)
 }
 
+def _achar_smartctl():
+    """Localiza o executavel smartctl no PATH ou em locais comuns."""
+    # 1. Tenta o PATH normal
+    caminho = shutil.which("smartctl")
+    if caminho:
+        return caminho
+
+    # 2. Tenta caminhos comuns no Windows
+    if SISTEMA == "Windows":
+        locais = [
+            r"C:\Program Files\smartmontools\bin\smartctl.exe",
+            r"C:\Program Files (x86)\smartmontools\bin\smartctl.exe",
+        ]
+        for local in locais:
+            if os.path.exists(local):
+                return local
+
+    return None
+
+SMARTCTL_BIN = _achar_smartctl()
 
 def _run(cmd, shell=False):
     """Executa comando e devolve stdout. Devolve '' em qualquer erro."""
@@ -60,7 +81,7 @@ _SERIAIS_LIXO = {
     "", "to be filled by o.e.m.", "to be filled by o.e.m",
     "default string", "system serial number", "none", "n/a", "na",
     "0", "00000000", "123456789", "not specified", "not applicable",
-    "chassis serial number", "empty", "unknown",
+    "chassis serial number", "empty", "unknown", "ffffffff-ffff-ffff-ffff-ffffffffffff"
 }
 
 
@@ -74,16 +95,17 @@ def _limpar_serial(valor):
 # ----------------------------------------------------------------------------
 
 def ler_identidade():
-    """Serial da BIOS, fabricante e modelo do computador."""
+    """Serial da BIOS, UUID, fabricante e modelo do computador."""
     if SISTEMA == "Windows":
         out = _powershell(
             "Get-CimInstance Win32_BIOS | Select-Object SerialNumber | ConvertTo-Json; "
             "Get-CimInstance Win32_ComputerSystem | "
             "Select-Object Manufacturer,Model | ConvertTo-Json; "
             "Get-CimInstance Win32_BaseBoard | "
-            "Select-Object SerialNumber,Product | ConvertTo-Json"
+            "Select-Object SerialNumber,Product | ConvertTo-Json; "
+            "Get-CimInstance Win32_ComputerSystemProduct | Select-Object UUID | ConvertTo-Json"
         )
-        serial = fabricante = modelo = serial_placa = ""
+        serial = fabricante = modelo = serial_placa = uuid = ""
         blocos = re.findall(r"\{.*?\}", out, re.S)
         for i, bloco in enumerate(blocos):
             try:
@@ -93,6 +115,9 @@ def ler_identidade():
             if "Product" in d:  # bloco da placa-mae
                 serial_placa = d.get("SerialNumber", "") or ""
                 continue
+            if "UUID" in d:
+                uuid = d.get("UUID", "") or ""
+                continue
             serial = d.get("SerialNumber", serial) or serial
             fabricante = d.get("Manufacturer", fabricante) or fabricante
             modelo = d.get("Model", modelo) or modelo
@@ -101,20 +126,24 @@ def ler_identidade():
         fabricante = _run(["dmidecode", "-s", "system-manufacturer"]).strip()
         modelo = _run(["dmidecode", "-s", "system-product-name"]).strip()
         serial_placa = _run(["dmidecode", "-s", "baseboard-serial-number"]).strip()
+        uuid = _run(["cat", "/sys/class/dmi/id/product_uuid"]).strip()
 
     serial = _limpar_serial(serial)
     serial_placa = _limpar_serial(serial_placa)
+    uuid = _limpar_serial(uuid)
 
-    # PC montado costuma nao preencher o serial do chassi, mas preenche o da
-    # placa-mae. Cadeia de fallback: BIOS -> placa-mae -> (main.py usa o disco)
+    # Cadeia de fallback: BIOS -> UUID -> placa-mae -> (main.py usa o disco)
     origem = "BIOS"
-    if not serial and serial_placa:
+    if not serial and uuid:
+        serial, origem = uuid, "UUID hardware"
+    elif not serial and serial_placa:
         serial, origem = serial_placa, "placa-mae"
     elif not serial:
         origem = ""
 
     return {
         "serial_bios": serial,
+        "uuid": uuid,
         "serial_placa": serial_placa,
         "origem_serial": origem,
         "fabricante": fabricante.strip(),
@@ -303,9 +332,9 @@ def _capacidade(d):
 
 
 def _dispositivos_disco():
-    if not shutil.which("smartctl"):
+    if not SMARTCTL_BIN:
         return []
-    out = _run(["smartctl", "--scan"])
+    out = _run([SMARTCTL_BIN, "--scan"])
     devs = []
     for linha in out.splitlines():
         if linha.strip() and not linha.startswith("#"):
@@ -320,9 +349,9 @@ def ler_disco(dispositivo=None):
     """
     vazio = {"disponivel": False, "motivo": "", "device": dispositivo or ""}
 
-    if not shutil.which("smartctl"):
+    if not SMARTCTL_BIN:
         vazio["motivo"] = ("smartctl nao encontrado. Instale smartmontools "
-                           "e garanta que esta no PATH.")
+                           "e garanta que esta no PATH ou em C:\\Program Files\\smartmontools\\bin.")
         return vazio
 
     if dispositivo is None:
@@ -332,7 +361,7 @@ def ler_disco(dispositivo=None):
             return vazio
         dispositivo = devs[0]
 
-    out = _run(["smartctl", "-a", "-j", dispositivo])
+    out = _run([SMARTCTL_BIN, "-a", "-j", dispositivo])
     try:
         d = json.loads(out)
     except Exception:
@@ -401,6 +430,7 @@ def coletar_tudo():
 if __name__ == "__main__":
     import pprint
     print(f"Sistema: {SISTEMA}")
+    print(f"Smartctl: {SMARTCTL_BIN or 'NAO ENCONTRADO'}")
     print("Coletando... (pode demorar alguns segundos)\n")
     dados = coletar_tudo()
     pprint.pprint(dados, width=100, sort_dicts=False)
@@ -410,9 +440,12 @@ if __name__ == "__main__":
         print("[!] Serial da BIOS vazio.")
         print("    Causa provavel: falta de privilegio de administrador,")
         print("    ou a placa-mae nao preenche esse campo (comum em PC montado).")
-        print("    Plano B: usar o serial do disco como identificador da maquina.")
+        print("    Plano B: usar o UUID de hardware ou o serial do disco.")
     else:
         print(f"[ok] Serial da BIOS: {dados['serial_bios']}")
+
+    if dados.get("uuid"):
+        print(f"[ok] UUID Hardware: {dados['uuid']}")
 
     if not dados["disco"]["disponivel"]:
         print(f"[!] SMART indisponivel: {dados['disco']['motivo']}")

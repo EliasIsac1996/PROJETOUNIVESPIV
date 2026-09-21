@@ -3,7 +3,7 @@ arduino.py
 ==========
 Comunicacao serial (UART sobre USB) entre o script da bancada e a BlackBoard UNO R3.
 
-PROTOCOLO (uma linha JSON por mensagem, terminada em \\n, 9600 baud):
+PROTOCOLO (uma linha JSON por mensagem, terminada em \n, 9600 baud):
 
   PC -> Arduino
     {"cmd":"PING"}
@@ -44,13 +44,13 @@ def listar_portas():
 def detectar_porta():
     """
     Procura automaticamente a porta do Arduino.
-    Reconhece os VID/PID mais comuns de UNO e clones (CH340, FTDI).
+    Reconhece os VID/PID mais comuns de UNO e clones (CH340, FTDI, CP210x).
     """
     candidatos = []
     for p in serial.tools.list_ports.comports():
         desc = f"{p.description} {p.manufacturer or ''}".lower()
         if any(t in desc for t in ("arduino", "ch340", "ch341", "usb-serial",
-                                   "wch", "ftdi", "usb2.0-serial", "blackboard")):
+                                   "wch", "ftdi", "usb2.0-serial", "blackboard", "cp210")):
             candidatos.append(p.device)
     if not candidatos:
         raise BancadaNaoEncontrada(
